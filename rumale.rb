@@ -1,10 +1,7 @@
 require 'numo/narray'
 require 'numo/gnuplot'
 require 'rumale'
-require 'awesome_print'
 require 'tempfile'
-
-# 手抜き
 
 module ToyData
   include Numo
@@ -26,12 +23,19 @@ module ToyData
     [x, y].map { |i| yuragi(i) }
   end
 
-  def self.yuragi(x)
-    x + Numo::DFloat.new(x.size).rand_norm(0, 0.5)
+  # 波型のトイデータをつくる
+  def self.wave(n, xminmax, b)
+    x = DFloat.new(n).rand(*xminmax)
+    y = NMath.sin(x * Math::PI) + b
+    [x, y].map { |i| yuragi(i, 0.2) }
+  end
+
+  def self.yuragi(x, sigma = 0.5)
+    x + DFloat.new(x.size).rand_norm(0, sigma)
   end
 end
 
-module MyTool
+module Tool
   class << self
     include Numo
 
@@ -77,18 +81,26 @@ module MyTool
       [[x1, y1], [x2, y2]]
     end
 
-
-    def gnuplot(s1, s2, file_name)
+    # トイデータのプロット用
+    def gnuplot(s1, s2, base_name)
       Numo.gnuplot do
         reset
         set :term, :png
-        set :out, file_name
-        set :title, file_name
+        set :out, base_name + '.png'
+        set :noborder
+        set :nokey
+        set :notics
+        set :origin, '0.1,0.1'
+        set :size, '0.8,0.8'
+        set :title, base_name
         plot [*s1, t: 's1', pt: 6, lw: 4], [*s2, t: 's2', pt: 6, lw: 4]
       end
     end
 
-    def sgnuplot(s1, s2, file_name)
+    # Rumale結果プロット用
+    def sgnuplot(s1, s2, base_name, colors)
+      color1 = colors[0]
+      color2 = colors[1]
       z1 = Numo::DFloat.new(s1[0].size).fill(-1)
       z2 = Numo::DFloat.new(s2[0].size).fill(1)
       x1, y1 = s1
@@ -99,6 +111,9 @@ module MyTool
 
       x_uniq = x.sort.to_a.uniq
 
+      # Missing blank lines 対策
+      # https://stackoverflow.com/questions/32347580/empty-plot-gnuplot
+      #
       datfile = Tempfile.open(['gnuplot', '.dat']) do |fp|
         x_uniq.each do |xu|
           sy = y[x.eq xu].sort
@@ -119,47 +134,84 @@ module MyTool
       Numo.gnuplot do
         reset
         set :term, :png
-        set :out, file_name
+        set :out, base_name + '.png'
         set :pm3d, :map
-        unset :colorbox
-        set "palette defined (0 '#46e0d1', 1 '#059297')"
-        unset :key
-        set :title, file_name
+        set :nocolorbox
+        set :noborder
+        set :notics
+        set :nokey
+        set "palette defined (0 '#{color1}', 1 '#{color2}')"
+        set :title, base_name
         splot '"' + File.expand_path(datfile.path) + '"'
       end
     end
   end
 end
 
+toydata = []
+
+# トイデータ 銀河
 s1 = ToyData.galaxy(100, [0, 2])
 s2 = ToyData.galaxy(100, [0, 2], 1)
-toydata0 = [s1, s2]
+toydata << {
+  name: :galaxy,
+  data: [s1, s2],
+  colors: ['#22fbb9', '#029ac1']
+}
 
+# トイデータ ドーナッツ
 s1 = ToyData.donut(100, [0, 1.8])
 s2 = ToyData.donut(100, [1.8, 3])
-toydata1 = [s1, s2]
+toydata << {
+  name: :donut,
+  data: [s1, s2],
+  colors: ['#b11df0', '#4800d9']
+}
+
+# トイデータ デュオ
+s1 = ToyData.donut(100, [0, 1])
+s2 = ToyData.donut(100, [0, 1])
+s1[0] += Numo::DFloat.new(100).fill(1.0)
+s1[1] += Numo::DFloat.new(100).fill(0.2)
+s2[0] += Numo::DFloat.new(100).fill(-1.0)
+s2[1] += Numo::DFloat.new(100).fill(-0.2)
+toydata << {
+  name: :duo,
+  data: [s1, s2],
+  colors: ['#fa2a82', '#990096']
+}
+
+# トイデータ 波
+s1 = ToyData.wave(100, [-2, 2], 0.5)
+s2 = ToyData.wave(100, [-2, 2], -0.5)
+toydata << {
+  name: :wave,
+  data: [s1, s2],
+  colors: ['#fdd400', '#ff6600']
+}
 
 models = {
   DecisionTree: Rumale::Tree::DecisionTreeClassifier.new,
   NaiveBayes:   Rumale::NaiveBayes::GaussianNB.new,
   RandomForest: Rumale::Ensemble::RandomForestClassifier.new,
-  KNeighbors:   Rumale::NearestNeighbors::KNeighborsClassifier.new(n_neighbors: 1),
-  AdaBoost:     Rumale::Ensemble::AdaBoostClassifier.new,
+  KNeighbors:   Rumale::NearestNeighbors::KNeighborsClassifier.new,
+  AdaBoost:     Rumale::Ensemble::AdaBoostClassifier.new
 }
 
-[toydata0, toydata1].each_with_index do |td, index1|
-  MyTool.gnuplot(*td, "toydata#{index1}.png")
+toydata.each do |td|
+  data = td[:data]
+  Tool.gnuplot(*data, td[:name].to_s)
 
-  models.each do |name, model|
-    samples = MyTool.samples(td)
-    labels  = MyTool.labels(td)
+  models.each do |model_name, model|
+    samples = Tool.samples(data)
+    labels  = Tool.labels(data)
 
     model.fit(samples, labels)
 
-    test_samples = MyTool.grid(samples)
+    test_samples = Tool.grid(samples)
     result = model.predict(test_samples)
 
-    s12 = MyTool.split_samples(test_samples, result)
-    MyTool.sgnuplot(*s12, "#{name}-#{index1}.png")
+    s12 = Tool.split_samples(test_samples, result)
+    Tool.sgnuplot(*s12, "#{td[:name]}-#{model_name}", td[:colors])
   end
 end
