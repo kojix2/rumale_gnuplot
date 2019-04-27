@@ -109,11 +109,10 @@ module Tool
       y = y1.concatenate y2
       z = z1.concatenate z2
 
-      x_uniq = x.sort.to_a.uniq
-
       # Missing blank lines 対策
       # https://stackoverflow.com/questions/32347580/empty-plot-gnuplot
       #
+      x_uniq = x.sort.to_a.uniq
       datfile = Tempfile.open(['gnuplot', '.dat']) do |fp|
         x_uniq.each do |xu|
           sy = y[x.eq xu].sort
