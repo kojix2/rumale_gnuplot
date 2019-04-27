@@ -4,3 +4,4 @@ convert -append 'donut.png' 'donut-AdaBoost.png' 'donut-DecisionTree.png' 'donut
 convert -append 'duo.png' 'duo-AdaBoost.png' 'duo-DecisionTree.png' 'duo-KNeighbors.png' 'duo-NaiveBayes.png' 'duo-RandomForest.png' z3.png
 convert -append 'wave.png' 'wave-AdaBoost.png' 'wave-DecisionTree.png' 'wave-KNeighbors.png' 'wave-NaiveBayes.png' 'wave-RandomForest.png' z4.png
 convert +append z1.png z2.png z3.png z4.png z.png
+ls *.png | grep -v "z.png" | xargs rm
